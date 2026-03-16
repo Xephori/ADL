@@ -9,8 +9,11 @@ from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as transforms
 import kagglehub
 
-# Download latest version
-path = kagglehub.dataset_download("waseemnagahhenes/sign-language-dataset-wlasl-videos", output_dir=".\\data", force_download=True)
+if not os.path.exists(".\\data"):
+    # Download latest version
+    path = kagglehub.dataset_download("waseemnagahhenes/sign-language-dataset-wlasl-videos", output_dir=".\\data")
+else:
+    path = ".\\data"
 VIDEO_DIR = os.path.join(path, "dataset/SL")
 print("Path to dataset files:", path)
 
