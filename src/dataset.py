@@ -1,0 +1,144 @@
+from __future__ import annotations
+import os
+import random
+from pathlib import Path
+from typing import List, Optional, Tuple
+import cv2
+import numpy as np
+import pandas as pd
+import torch
+import torchvision.transforms as T
+from torch.utils.data import DataLoader, Dataset
+
+IMAGENET_MEAN = [0.485, 0.456, 0.406]
+IMAGENET_STD = [0.229, 0.224, 0.225]
+
+# Frame extraction helpers
+
+def extract_frames(video_path: str) -> List[np.ndarray]:
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        raise RuntimeError(f"Cannot open video: {video_path}")
+
+    frames: List[np.ndarray] = []
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        frames.append(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+    cap.release()
+    return frames
+
+def sample_frames(
+    frames: List[np.ndarray],
+    num_frames: int = 16,
+    jitter: bool = False,
+) -> List[np.ndarray]:
+    total = len(frames)
+    if total == 0:
+        raise ValueError("Video has no frames")
+
+    if total < num_frames:
+        frames = frames + [frames[-1]] * (num_frames - total)
+        total = len(frames)
+
+    max_offset = max(total - num_frames, 0)
+    if jitter and max_offset > 0:
+        start = random.randint(0, max_offset)
+        frames = frames[start:]
+        total = len(frames)
+
+    indices = np.linspace(0, total - 1, num_frames).astype(int)
+    return [frames[i] for i in indices]
+
+# Transforms
+
+def get_train_transform(image_size: int = 224) -> T.Compose:
+    return T.Compose([
+        T.ToPILImage(),
+        T.Resize((image_size, image_size)),
+        T.RandomHorizontalFlip(p=0.5),
+        T.RandomRotation(degrees=10),
+        T.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
+        T.ToTensor(),
+        T.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
+    ])
+
+
+def get_eval_transform(image_size: int = 224) -> T.Compose:
+    return T.Compose([
+        T.ToPILImage(),
+        T.Resize((image_size, image_size)),
+        T.ToTensor(),
+        T.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
+    ])
+
+# Dataset
+
+class WLASLDataset(Dataset):
+    def __init__(
+        self,
+        dataframe: pd.DataFrame,
+        transform: Optional[T.Compose] = None,
+        num_frames: int = 16,
+        jitter: bool = False,
+    ) -> None:
+        self.df = dataframe.reset_index(drop=True)
+        self.transform = transform
+        self.num_frames = num_frames
+        self.jitter = jitter
+
+    def __len__(self) -> int:
+        return len(self.df)
+
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, int]:
+        row = self.df.iloc[idx]
+        video_path: str = row["video_path"]
+        label: int = int(row["label_idx"])
+
+        frames = extract_frames(video_path)
+        frames = sample_frames(frames, self.num_frames, jitter=self.jitter)
+
+        processed: List[torch.Tensor] = []
+        for frame in frames:
+            if self.transform is not None:
+                frame = self.transform(frame)
+            else:
+                frame = torch.from_numpy(frame).permute(2, 0, 1).float() / 255.0
+            processed.append(frame)
+
+        video_tensor = torch.stack(processed)  
+        return video_tensor, label
+
+# DataLoader factory
+
+def create_dataloaders(
+    metadata_csv: str,
+    num_frames: int = 16,
+    image_size: int = 224,
+    batch_size: int = 8,
+    num_workers: int = 2,
+) -> Tuple[DataLoader, DataLoader, DataLoader, int, dict]:
+    df = pd.read_csv(metadata_csv)
+
+    train_df = df[df["split"] == "train"]
+    val_df = df[df["split"] == "val"]
+    test_df = df[df["split"] == "test"]
+
+    labels_sorted = sorted(df["label"].unique())
+    label_to_idx = {lbl: idx for idx, lbl in enumerate(labels_sorted)}
+    num_classes = len(labels_sorted)
+
+    train_transform = get_train_transform(image_size)
+    eval_transform = get_eval_transform(image_size)
+
+    train_dataset = WLASLDataset(train_df, transform=train_transform, num_frames=num_frames, jitter=True)
+    val_dataset = WLASLDataset(val_df, transform=eval_transform, num_frames=num_frames, jitter=False)
+    test_dataset = WLASLDataset(test_df, transform=eval_transform, num_frames=num_frames, jitter=False)
+
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
+
+    print(f"[dataset] Train: {len(train_dataset)} | Val: {len(val_dataset)} | Test: {len(test_dataset)} | Classes: {num_classes}")
+    return train_loader, val_loader, test_loader, num_classes, label_to_idx
