@@ -1,0 +1,40 @@
+
+data:
+  video_dir: "data/dataset/SL"
+  num_frames: 16            
+  image_size: 224           
+  num_workers: 2
+  seed: 42
+
+
+model:
+  name: "model_c"           
+  num_classes: 100
+  cnn_blocks: 4             
+  cnn_channels: [32, 64, 128, 256] 
+  feature_dim: 256         
+  lstm_hidden_size: 256
+  lstm_num_layers: 2
+  lstm_bidirectional: true
+  lstm_dropout: 0.3
+  attention_hidden_dim: 128
+  classifier_dropout: 0.4
+
+# --- Training ---
+training:
+  batch_size: 8
+  epochs: 80
+  learning_rate: 0.0005     # 5e-4
+  weight_decay: 0.0001      # for AdamW
+  optimizer: "adamw"        # adam | adamw
+  scheduler: "cosine"       # step | cosine
+  step_size: 20             # for StepLR
+  step_gamma: 0.5           # for StepLR
+  early_stopping_patience: 12
+  use_class_weights: true   # weight CrossEntropyLoss by inverse class frequency
+
+# --- Paths ---
+paths:
+  save_dir: "saved_models"
+  results_dir: "results"
+  log_csv: "results/training_log.csv"
