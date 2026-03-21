@@ -22,12 +22,13 @@ def set_seed(seed: int = 42) -> None:
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-# class weights
-def compute_class_weights(train_loader: DataLoader, num_classes: int, device: torch.device) -> torch.Tensor:
+# class weights — computed from CSV metadata (no video loading needed)
+def compute_class_weights(metadata_csv: str, num_classes: int, device: torch.device) -> torch.Tensor:
+    df = pd.read_csv(metadata_csv)
+    train_df = df[df["split"] == "train"]
     counts = torch.zeros(num_classes)
-    for _, labels in train_loader:
-        for label in labels:
-            counts[label.item()] += 1
+    for label_idx in train_df["label_idx"]:
+        counts[int(label_idx)] += 1
     weights = 1.0 / (counts + 1e-6)
     weights = weights / weights.sum() * num_classes
     return weights.to(device)
@@ -134,7 +135,7 @@ def train(cfg: Config, run_name: str | None = None) -> Dict[str, object]:
 
     # loss
     if cfg.training.use_class_weights:
-        weights = compute_class_weights(train_loader, num_classes, device)
+        weights = compute_class_weights(metadata_csv, num_classes, device)
         criterion = nn.CrossEntropyLoss(weight=weights)
     else:
         criterion = nn.CrossEntropyLoss()
@@ -210,6 +211,9 @@ def train(cfg: Config, run_name: str | None = None) -> Dict[str, object]:
             if patience_counter >= cfg.training.early_stopping_patience:
                 print(f"[train] Early stopping at epoch {epoch} (patience={cfg.training.early_stopping_patience})")
                 break
+
+        # save log after every epoch (in case session dies)
+        pd.DataFrame(log_rows).to_csv(log_csv_path, index=False)
 
     # training log
     log_df = pd.DataFrame(log_rows)

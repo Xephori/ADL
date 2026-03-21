@@ -96,7 +96,11 @@ class WLASLDataset(Dataset):
         video_path: str = row["video_path"]
         label: int = int(row["label_idx"])
 
-        frames = extract_frames(video_path)
+        try:
+            frames = extract_frames(video_path)
+        except RuntimeError:
+            # Skip corrupted video, return a random other sample
+            return self.__getitem__((idx + 1) % len(self))
         frames = sample_frames(frames, self.num_frames, jitter=self.jitter)
 
         processed: List[torch.Tensor] = []
@@ -110,6 +114,33 @@ class WLASLDataset(Dataset):
         video_tensor = torch.stack(processed)  
         return video_tensor, label
 
+# Cached dataset — loads pre-extracted .pt files (much faster)
+
+class CachedWLASLDataset(Dataset):
+    def __init__(self, indices: List[int], cache_dir: str, train_aug: bool = False):
+        self.indices = indices
+        self.cache_dir = cache_dir
+        self.train_aug = train_aug
+        self.aug = T.Compose([
+            T.RandomHorizontalFlip(p=0.5),
+            T.RandomRotation(degrees=10),
+            T.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
+            T.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
+        ]) if train_aug else T.Compose([
+            T.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
+        ])
+
+    def __len__(self) -> int:
+        return len(self.indices)
+
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, int]:
+        data = torch.load(os.path.join(self.cache_dir, f"{self.indices[idx]}.pt"), weights_only=False)
+        frames = data["frames"]  # [T, 3, H, W] already resized
+        label = data["label_idx"]
+        # apply augmentation per-frame
+        augmented = torch.stack([self.aug(f) for f in frames])
+        return augmented, label
+
 # DataLoader factory
 
 def create_dataloaders(
@@ -117,7 +148,8 @@ def create_dataloaders(
     num_frames: int = 16,
     image_size: int = 224,
     batch_size: int = 8,
-    num_workers: int = 2,
+    num_workers: int = 0,
+    cache_dir: str = "data/frames_cache",
 ) -> Tuple[DataLoader, DataLoader, DataLoader, int, dict]:
     df = pd.read_csv(metadata_csv)
 
@@ -129,12 +161,20 @@ def create_dataloaders(
     label_to_idx = {lbl: idx for idx, lbl in enumerate(labels_sorted)}
     num_classes = len(labels_sorted)
 
-    train_transform = get_train_transform(image_size)
-    eval_transform = get_eval_transform(image_size)
-
-    train_dataset = WLASLDataset(train_df, transform=train_transform, num_frames=num_frames, jitter=True)
-    val_dataset = WLASLDataset(val_df, transform=eval_transform, num_frames=num_frames, jitter=False)
-    test_dataset = WLASLDataset(test_df, transform=eval_transform, num_frames=num_frames, jitter=False)
+    # Use cached frames if available (much faster)
+    use_cache = os.path.isdir(cache_dir) and len(os.listdir(cache_dir)) > 0
+    if use_cache:
+        print(f"[dataset] Using pre-extracted frames from {cache_dir}")
+        train_dataset = CachedWLASLDataset(train_df.index.tolist(), cache_dir, train_aug=True)
+        val_dataset = CachedWLASLDataset(val_df.index.tolist(), cache_dir, train_aug=False)
+        test_dataset = CachedWLASLDataset(test_df.index.tolist(), cache_dir, train_aug=False)
+    else:
+        print(f"[dataset] No frame cache found — extracting from video on the fly (slow)")
+        train_transform = get_train_transform(image_size)
+        eval_transform = get_eval_transform(image_size)
+        train_dataset = WLASLDataset(train_df, transform=train_transform, num_frames=num_frames, jitter=True)
+        val_dataset = WLASLDataset(val_df, transform=eval_transform, num_frames=num_frames, jitter=False)
+        test_dataset = WLASLDataset(test_df, transform=eval_transform, num_frames=num_frames, jitter=False)
 
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
