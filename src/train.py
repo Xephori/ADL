@@ -101,20 +101,24 @@ def validate(
     return avg_loss, accuracy
 
 # main training
-def train(cfg: Config, run_name: str | None = None) -> Dict[str, object]:
+def train(cfg: Config, run_name: str | None = None, loaders=None) -> Dict[str, object]:
     set_seed(cfg.data.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"[train] Device: {device}")
 
-    # data
+    # data — reuse loaders if provided
     metadata_csv = os.path.join("data", "metadata.csv")
-    train_loader, val_loader, test_loader, num_classes, label_to_idx = create_dataloaders(
-        metadata_csv=metadata_csv,
-        num_frames=cfg.data.num_frames,
-        image_size=cfg.data.image_size,
-        batch_size=cfg.training.batch_size,
-        num_workers=cfg.data.num_workers,
-    )
+    if loaders is not None:
+        train_loader, val_loader, test_loader, num_classes = loaders
+    else:
+        train_loader, val_loader, test_loader, num_classes, label_to_idx = create_dataloaders(
+            metadata_csv=metadata_csv,
+            num_frames=cfg.data.num_frames,
+            image_size=cfg.data.image_size,
+            batch_size=cfg.training.batch_size,
+            num_workers=cfg.data.num_workers,
+            top_n_classes=cfg.model.num_classes if cfg.model.num_classes < 100 else 0,
+        )
 
     # model
     model = get_model(
@@ -236,10 +240,32 @@ def train(cfg: Config, run_name: str | None = None) -> Dict[str, object]:
 
 def main() -> None:
     parser = get_cli_parser()
+    parser.add_argument("--train-all", action="store_true", help="Train all 3 models with one data load")
     args = parser.parse_args()
 
     cfg = load_config(args.config)
     cfg = apply_cli_overrides(cfg, args)
+
+    if args.train_all:
+        # Load data ONCE, train all 3 models
+        metadata_csv = os.path.join("data", "metadata.csv")
+        train_loader, val_loader, test_loader, num_classes, _ = create_dataloaders(
+            metadata_csv=metadata_csv,
+            num_frames=cfg.data.num_frames,
+            image_size=cfg.data.image_size,
+            batch_size=cfg.training.batch_size,
+            num_workers=cfg.data.num_workers,
+            top_n_classes=cfg.model.num_classes if cfg.model.num_classes < 100 else 0,
+        )
+        loaders = (train_loader, val_loader, test_loader, num_classes)
+        for model_name, run_name in [("model_a", "model_a_baseline"), ("model_b", "model_b_lstm"), ("model_c", "model_c_attention")]:
+            print(f"\n{'='*50}")
+            print(f"  Training {model_name}")
+            print(f"{'='*50}")
+            cfg.model.name = model_name
+            results = train(cfg, run_name=run_name, loaders=loaders)
+            print(f"[train] {model_name} done — Test acc: {results['test_acc']:.4f}\n")
+        return
 
     print(f"[train] Config: model={cfg.model.name}, lr={cfg.training.learning_rate}, "
           f"batch={cfg.training.batch_size}, frames={cfg.data.num_frames}, "
