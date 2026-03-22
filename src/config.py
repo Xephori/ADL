@@ -44,6 +44,9 @@ class TrainingConfig:
     step_gamma: float = 0.5
     early_stopping_patience: int = 12
     use_class_weights: bool = True
+    grad_clip: float = 0.0
+    label_smoothing: float = 0.0
+    mixup_alpha: float = 0.0
 
 #file path for saving configs
 @dataclass

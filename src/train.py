@@ -34,12 +34,26 @@ def compute_class_weights(metadata_csv: str, num_classes: int, device: torch.dev
     return weights.to(device)
 
 # Train / validate one epoch
+def mixup_data(x, y, alpha=0.2):
+    """Blend pairs of samples: x' = lam*x_i + (1-lam)*x_j, returns mixed x, y_a, y_b, lam."""
+    lam = np.random.beta(alpha, alpha) if alpha > 0 else 1.0
+    batch_size = x.size(0)
+    index = torch.randperm(batch_size, device=x.device)
+    mixed_x = lam * x + (1 - lam) * x[index]
+    return mixed_x, y, y[index], lam
+
+def mixup_criterion(criterion, logits, y_a, y_b, lam):
+    """Compute blended loss for mixup."""
+    return lam * criterion(logits, y_a) + (1 - lam) * criterion(logits, y_b)
+
 def train_one_epoch(
     model: nn.Module,
     loader: DataLoader,
     criterion: nn.Module,
     optimizer: torch.optim.Optimizer,
     device: torch.device,
+    grad_clip: float = 0.0,
+    mixup_alpha: float = 0.0,
 ) -> Tuple[float, float]:
     model.train()
     running_loss = 0.0
@@ -47,21 +61,34 @@ def train_one_epoch(
     total = 0
 
     for videos, labels in tqdm(loader, desc="  train", leave=False):
-        videos = videos.to(device)       
+        videos = videos.to(device)
         labels = labels.to(device).long()
+
+        if mixup_alpha > 0:
+            videos, labels_a, labels_b, lam = mixup_data(videos, labels, mixup_alpha)
 
         optimizer.zero_grad()
         logits = model(videos)
         if isinstance(logits, dict):
             logits = logits["logits"]
-        loss = criterion(logits, labels)
+
+        if mixup_alpha > 0:
+            loss = mixup_criterion(criterion, logits, labels_a, labels_b, lam)
+        else:
+            loss = criterion(logits, labels)
+
         loss.backward()
+        if grad_clip > 0:
+            nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
         optimizer.step()
 
         running_loss += loss.item() * videos.size(0)
         preds = logits.argmax(dim=1)
-        correct += (preds == labels).sum().item()
-        total += labels.size(0)
+        if mixup_alpha > 0:
+            correct += (lam * (preds == labels_a).sum().item() + (1 - lam) * (preds == labels_b).sum().item())
+        else:
+            correct += (preds == labels).sum().item()
+        total += labels.size(0) if mixup_alpha == 0 else labels_a.size(0)
 
     avg_loss = running_loss / total
     accuracy = correct / total
@@ -140,9 +167,9 @@ def train(cfg: Config, run_name: str | None = None, loaders=None) -> Dict[str, o
     # loss
     if cfg.training.use_class_weights:
         weights = compute_class_weights(metadata_csv, num_classes, device)
-        criterion = nn.CrossEntropyLoss(weight=weights)
+        criterion = nn.CrossEntropyLoss(weight=weights, label_smoothing=cfg.training.label_smoothing)
     else:
-        criterion = nn.CrossEntropyLoss()
+        criterion = nn.CrossEntropyLoss(label_smoothing=cfg.training.label_smoothing)
 
     # optimiser
     if cfg.training.optimizer == "adamw":
@@ -174,8 +201,9 @@ def train(cfg: Config, run_name: str | None = None, loaders=None) -> Dict[str, o
     os.makedirs(cfg.paths.save_dir, exist_ok=True)
 
     tag = run_name or cfg.model.name
-    log_csv_path = os.path.join(cfg.paths.results_dir, f"{tag}_log.csv")
-    best_model_path = os.path.join(cfg.paths.save_dir, f"{tag}_best.pth")
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    log_csv_path = os.path.join(cfg.paths.results_dir, f"{tag}_{timestamp}_log.csv")
+    best_model_path = os.path.join(cfg.paths.save_dir, f"{tag}_{timestamp}_best.pth")
     log_rows = []
     best_val_loss = float("inf")
     patience_counter = 0
@@ -184,7 +212,7 @@ def train(cfg: Config, run_name: str | None = None, loaders=None) -> Dict[str, o
     print(f"[train] Starting training for {cfg.training.epochs} epochs …")
     for epoch in range(1, cfg.training.epochs + 1):
         t0 = time.time()
-        train_loss, train_acc = train_one_epoch(model, train_loader, criterion, optimizer, device)
+        train_loss, train_acc = train_one_epoch(model, train_loader, criterion, optimizer, device, grad_clip=cfg.training.grad_clip, mixup_alpha=cfg.training.mixup_alpha)
         val_loss, val_acc = validate(model, val_loader, criterion, device)
         scheduler.step()
         elapsed = time.time() - t0
