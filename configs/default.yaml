@@ -1,37 +1,37 @@
 
 data:
   video_dir: "data/dataset/SL"
-  num_frames: 16            
-  image_size: 224           
+  num_frames: 16
+  image_size: 224
   num_workers: 2
   seed: 42
 
 
 model:
-  name: "model_c"           
-  num_classes: 100
-  cnn_blocks: 4             
-  cnn_channels: [32, 64, 128, 256] 
-  feature_dim: 256         
+  name: "model_c"
+  num_classes: 20
+  cnn_blocks: 4
+  cnn_channels: [64, 128, 256, 512]
+  feature_dim: 512
   lstm_hidden_size: 256
   lstm_num_layers: 2
   lstm_bidirectional: true
-  lstm_dropout: 0.3
+  lstm_dropout: 0.2
   attention_hidden_dim: 128
-  classifier_dropout: 0.4
+  classifier_dropout: 0.1
 
 # --- Training ---
 training:
   batch_size: 8
-  epochs: 80
-  learning_rate: 0.0005     # 5e-4
+  epochs: 200
+  learning_rate: 0.005      # 5e-3
   weight_decay: 0.0001      # for AdamW
-  optimizer: "adamw"        # adam | adamw
-  scheduler: "cosine"       # step | cosine
-  step_size: 20             # for StepLR
+  optimizer: "adam"          # adam | adamw
+  scheduler: "step"         # step | cosine
+  step_size: 40             # for StepLR
   step_gamma: 0.5           # for StepLR
-  early_stopping_patience: 12
-  use_class_weights: true   # weight CrossEntropyLoss by inverse class frequency
+  early_stopping_patience: 25
+  use_class_weights: false   # disabled — can destabilize early training with small dataset
 
 # --- Paths ---
 paths:
