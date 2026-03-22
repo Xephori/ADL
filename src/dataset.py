@@ -121,25 +121,56 @@ class CachedWLASLDataset(Dataset):
         self.indices = indices
         self.cache_dir = cache_dir
         self.train_aug = train_aug
-        self.aug = T.Compose([
-            T.RandomHorizontalFlip(p=0.5),
-            T.RandomRotation(degrees=10),
-            T.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
-            T.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
-        ]) if train_aug else T.Compose([
-            T.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
-        ])
+        # Pre-compute normalize constants as tensors [1, 3, 1, 1]
+        self.mean = torch.tensor(IMAGENET_MEAN, dtype=torch.float16).view(1, 3, 1, 1)
+        self.std = torch.tensor(IMAGENET_STD, dtype=torch.float16).view(1, 3, 1, 1)
+        self.train_flip = train_aug
+        # Load ALL data into one big pre-allocated tensor
+        from concurrent.futures import ThreadPoolExecutor
+        print(f"[dataset] Loading {len(indices)} cached files into RAM...")
+        def _load(i):
+            d = torch.load(os.path.join(cache_dir, f"{i}.pt"), weights_only=False)
+            # frames are already normalized (ToTensor + ImageNet normalize in preextract)
+            return (d["frames"], int(d["label_idx"]))
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            loaded = list(pool.map(_load, indices))
+        self.all_frames = torch.stack([x[0] for x in loaded])
+        self.all_labels = torch.tensor([x[1] for x in loaded], dtype=torch.long)
+        del loaded
+        print(f"[dataset] All {len(indices)} files loaded into RAM.")
 
     def __len__(self) -> int:
         return len(self.indices)
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, int]:
-        data = torch.load(os.path.join(self.cache_dir, f"{self.indices[idx]}.pt"), weights_only=False)
-        frames = data["frames"]  # [T, 3, H, W] already resized
-        label = data["label_idx"]
-        # apply augmentation per-frame
-        augmented = torch.stack([self.aug(f) for f in frames])
-        return augmented, label
+        frames = self.all_frames[idx]  # [T, 3, H, W] already normalized
+        label = self.all_labels[idx].item()
+        if self.train_flip and torch.rand(1).item() > 0.5:
+            frames = frames.flip(-1)
+        return frames, label
+
+# Fast batching — just slices into pre-loaded tensors, no copying
+
+class FastTensorLoader:
+    """Drop-in replacement for DataLoader that slices contiguous tensors."""
+    def __init__(self, frames: torch.Tensor, labels: torch.Tensor, batch_size: int, shuffle: bool = False):
+        self.frames = frames
+        self.labels = labels
+        self.batch_size = batch_size
+        self.shuffle = shuffle
+
+    def __len__(self) -> int:
+        return (len(self.labels) + self.batch_size - 1) // self.batch_size
+
+    def __iter__(self):
+        n = len(self.labels)
+        if self.shuffle:
+            idx = torch.randperm(n)
+        else:
+            idx = torch.arange(n)
+        for i in range(0, n, self.batch_size):
+            batch_idx = idx[i:i+self.batch_size]
+            yield self.frames[batch_idx], self.labels[batch_idx]
 
 # DataLoader factory
 
@@ -150,8 +181,16 @@ def create_dataloaders(
     batch_size: int = 8,
     num_workers: int = 0,
     cache_dir: str = "data/frames_cache",
+    top_n_classes: int = 0,
 ) -> Tuple[DataLoader, DataLoader, DataLoader, int, dict]:
     df = pd.read_csv(metadata_csv)
+
+    # Filter to top N classes if specified
+    if top_n_classes > 0:
+        train_counts = df[df["split"] == "train"]["label"].value_counts()
+        top_labels = train_counts.head(top_n_classes).index.tolist()
+        df = df[df["label"].isin(top_labels)].reset_index(drop=True)
+        print(f"[dataset] Filtered to top {top_n_classes} classes: {len(df)} samples")
 
     train_df = df[df["split"] == "train"]
     val_df = df[df["split"] == "val"]
@@ -161,6 +200,14 @@ def create_dataloaders(
     label_to_idx = {lbl: idx for idx, lbl in enumerate(labels_sorted)}
     num_classes = len(labels_sorted)
 
+    # Build label remapping: original label_idx -> new 0..N-1
+    old_to_new = {}
+    for _, row in df.iterrows():
+        lbl = row["label"]
+        old_idx = int(row["label_idx"])
+        if lbl in label_to_idx and old_idx not in old_to_new:
+            old_to_new[old_idx] = label_to_idx[lbl]
+
     # Use cached frames if available (much faster)
     use_cache = os.path.isdir(cache_dir) and len(os.listdir(cache_dir)) > 0
     if use_cache:
@@ -168,6 +215,12 @@ def create_dataloaders(
         train_dataset = CachedWLASLDataset(train_df.index.tolist(), cache_dir, train_aug=True)
         val_dataset = CachedWLASLDataset(val_df.index.tolist(), cache_dir, train_aug=False)
         test_dataset = CachedWLASLDataset(test_df.index.tolist(), cache_dir, train_aug=False)
+        # Remap labels to 0..num_classes-1
+        for ds in [train_dataset, val_dataset, test_dataset]:
+            ds.all_labels = torch.tensor([old_to_new[l.item()] for l in ds.all_labels], dtype=torch.long)
+        train_loader = FastTensorLoader(train_dataset.all_frames, train_dataset.all_labels, batch_size, shuffle=True)
+        val_loader = FastTensorLoader(val_dataset.all_frames, val_dataset.all_labels, batch_size, shuffle=False)
+        test_loader = FastTensorLoader(test_dataset.all_frames, test_dataset.all_labels, batch_size, shuffle=False)
     else:
         print(f"[dataset] No frame cache found — extracting from video on the fly (slow)")
         train_transform = get_train_transform(image_size)
@@ -175,10 +228,12 @@ def create_dataloaders(
         train_dataset = WLASLDataset(train_df, transform=train_transform, num_frames=num_frames, jitter=True)
         val_dataset = WLASLDataset(val_df, transform=eval_transform, num_frames=num_frames, jitter=False)
         test_dataset = WLASLDataset(test_df, transform=eval_transform, num_frames=num_frames, jitter=False)
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=False)
+        val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=False)
+        test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=False)
 
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
-
-    print(f"[dataset] Train: {len(train_dataset)} | Val: {len(val_dataset)} | Test: {len(test_dataset)} | Classes: {num_classes}")
+    n_train = train_dataset.all_frames.shape[0] if use_cache else len(train_dataset)
+    n_val = val_dataset.all_frames.shape[0] if use_cache else len(val_dataset)
+    n_test = test_dataset.all_frames.shape[0] if use_cache else len(test_dataset)
+    print(f"[dataset] Train: {n_train} | Val: {n_val} | Test: {n_test} | Classes: {num_classes}")
     return train_loader, val_loader, test_loader, num_classes, label_to_idx
