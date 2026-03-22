@@ -9,7 +9,7 @@ data:
 
 model:
   name: "model_c"
-  num_classes: 20
+  num_classes: 10
   cnn_blocks: 4
   cnn_channels: [32, 64, 128, 256]
   feature_dim: 256
@@ -23,7 +23,7 @@ model:
 # --- Training ---
 training:
   batch_size: 8
-  epochs: 200
+  epochs: 100
   learning_rate: 0.001      # 1e-3 (validated by hyperparam search: 66% vs 48% at 5e-3)
   weight_decay: 0.0001
   label_smoothing: 0.1
@@ -32,7 +32,7 @@ training:
   scheduler: "step"         # step | cosine
   step_size: 50             # for StepLR
   step_gamma: 0.5           # for StepLR
-  early_stopping_patience: 40
+  early_stopping_patience: 100  # effectively disabled — train all epochs
   grad_clip: 1.0            # gradient clipping for LSTM stability
   use_class_weights: false   # disabled — can destabilize early training with small dataset
 
