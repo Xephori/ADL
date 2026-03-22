@@ -185,11 +185,11 @@ def create_dataloaders(
 ) -> Tuple[DataLoader, DataLoader, DataLoader, int, dict]:
     df = pd.read_csv(metadata_csv)
 
-    # Filter to top N classes if specified
+    # Filter to top N classes if specified (keep original indices for .pt file names)
     if top_n_classes > 0:
         train_counts = df[df["split"] == "train"]["label"].value_counts()
         top_labels = train_counts.head(top_n_classes).index.tolist()
-        df = df[df["label"].isin(top_labels)].reset_index(drop=True)
+        df = df[df["label"].isin(top_labels)]
         print(f"[dataset] Filtered to top {top_n_classes} classes: {len(df)} samples")
 
     train_df = df[df["split"] == "train"]
