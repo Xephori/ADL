@@ -286,7 +286,7 @@ def main() -> None:
             top_n_classes=cfg.model.num_classes if cfg.model.num_classes < 100 else 0,
         )
         loaders = (train_loader, val_loader, test_loader, num_classes)
-        for model_name, run_name in [("model_a", "model_a_baseline"), ("model_b", "model_b_lstm"), ("model_c", "model_c_attention")]:
+        for model_name, run_name in [("model_a", "model_a_baseline"), ("model_b", "model_b_lstm"), ("model_c", "model_c_attention"), ("model_d", "model_d_pretrained")]:
             print(f"\n{'='*50}")
             print(f"  Training {model_name}")
             print(f"{'='*50}")
