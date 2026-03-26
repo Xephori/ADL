@@ -16,11 +16,11 @@ class PretrainedBackbone(nn.Module):
         self.feature_dim = 512  # ResNet18 outputs 512-dim features
 
         # Freeze early layers (they already know edges, textures, shapes)
-        # Only fine-tune the last few layers for our task
+        # Fine-tune layer3 + layer4 for our task
         if freeze_early:
             for name, param in self.features.named_parameters():
-                # Freeze everything except layer4 (the last residual block)
-                if "6" not in name and "7" not in name:
+                # Freeze everything except layer3 and layer4
+                if "5" not in name and "6" not in name and "7" not in name:
                     param.requires_grad = False
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:

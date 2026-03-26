@@ -23,11 +23,11 @@ model:
 # --- Training ---
 training:
   batch_size: 8
-  epochs: 100
-  learning_rate: 0.001      # 1e-3 (validated by hyperparam search: 66% vs 48% at 5e-3)
+  epochs: 200
+  learning_rate: 0.0005     # lower LR for fine-tuning pretrained Model D
   weight_decay: 0.0001
   label_smoothing: 0.1
-  mixup_alpha: 0.2
+  mixup_alpha: 0.0           # disabled for Model D — blending signs creates meaningless images
   optimizer: "adam"          # adam | adamw
   scheduler: "step"         # step | cosine
   step_size: 50             # for StepLR
