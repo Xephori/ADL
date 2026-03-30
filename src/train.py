@@ -22,7 +22,6 @@ def set_seed(seed: int = 42) -> None:
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-# class weights — computed from CSV metadata (no video loading needed)
 def compute_class_weights(metadata_csv: str, num_classes: int, device: torch.device) -> torch.Tensor:
     df = pd.read_csv(metadata_csv)
     train_df = df[df["split"] == "train"]
@@ -35,7 +34,6 @@ def compute_class_weights(metadata_csv: str, num_classes: int, device: torch.dev
 
 # Train / validate one epoch
 def mixup_data(x, y, alpha=0.2):
-    """Blend pairs of samples: x' = lam*x_i + (1-lam)*x_j, returns mixed x, y_a, y_b, lam."""
     lam = np.random.beta(alpha, alpha) if alpha > 0 else 1.0
     batch_size = x.size(0)
     index = torch.randperm(batch_size, device=x.device)
@@ -43,7 +41,6 @@ def mixup_data(x, y, alpha=0.2):
     return mixed_x, y, y[index], lam
 
 def mixup_criterion(criterion, logits, y_a, y_b, lam):
-    """Compute blended loss for mixup."""
     return lam * criterion(logits, y_a) + (1 - lam) * criterion(logits, y_b)
 
 def train_one_epoch(
@@ -133,7 +130,7 @@ def train(cfg: Config, run_name: str | None = None, loaders=None) -> Dict[str, o
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"[train] Device: {device}")
 
-    # data — reuse loaders if provided
+    # data 
     metadata_csv = os.path.join("data", "metadata.csv")
     if loaders is not None:
         train_loader, val_loader, test_loader, num_classes = loaders
@@ -244,7 +241,6 @@ def train(cfg: Config, run_name: str | None = None, loaders=None) -> Dict[str, o
                 print(f"[train] Early stopping at epoch {epoch} (patience={cfg.training.early_stopping_patience})")
                 break
 
-        # save log after every epoch (in case session dies)
         pd.DataFrame(log_rows).to_csv(log_csv_path, index=False)
 
     # training log
@@ -275,7 +271,6 @@ def main() -> None:
     cfg = apply_cli_overrides(cfg, args)
 
     if args.train_all:
-        # Load data ONCE, train all 3 models
         metadata_csv = os.path.join("data", "metadata.csv")
         train_loader, val_loader, test_loader, num_classes, _ = create_dataloaders(
             metadata_csv=metadata_csv,
@@ -287,9 +282,7 @@ def main() -> None:
         )
         loaders = (train_loader, val_loader, test_loader, num_classes)
         for model_name, run_name in [("model_a", "model_a_baseline"), ("model_b", "model_b_lstm"), ("model_c", "model_c_attention"), ("model_d", "model_d_pretrained")]:
-            print(f"\n{'='*50}")
             print(f"  Training {model_name}")
-            print(f"{'='*50}")
             cfg.model.name = model_name
             results = train(cfg, run_name=run_name, loaders=loaders)
             print(f"[train] {model_name} done — Test acc: {results['test_acc']:.4f}\n")
