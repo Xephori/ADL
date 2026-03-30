@@ -114,23 +114,20 @@ class WLASLDataset(Dataset):
         video_tensor = torch.stack(processed)  
         return video_tensor, label
 
-# Cached dataset — loads pre-extracted .pt files (much faster)
+# Cached dataset
 
 class CachedWLASLDataset(Dataset):
     def __init__(self, indices: List[int], cache_dir: str, train_aug: bool = False):
         self.indices = indices
         self.cache_dir = cache_dir
         self.train_aug = train_aug
-        # Pre-compute normalize constants as tensors [1, 3, 1, 1]
         self.mean = torch.tensor(IMAGENET_MEAN, dtype=torch.float16).view(1, 3, 1, 1)
         self.std = torch.tensor(IMAGENET_STD, dtype=torch.float16).view(1, 3, 1, 1)
         self.train_flip = train_aug
-        # Load ALL data into one big pre-allocated tensor
         from concurrent.futures import ThreadPoolExecutor
         print(f"[dataset] Loading {len(indices)} cached files into RAM...")
         def _load(i):
             d = torch.load(os.path.join(cache_dir, f"{i}.pt"), weights_only=False)
-            # frames are already normalized (ToTensor + ImageNet normalize in preextract)
             return (d["frames"], int(d["label_idx"]))
         with ThreadPoolExecutor(max_workers=8) as pool:
             loaded = list(pool.map(_load, indices))
@@ -143,16 +140,15 @@ class CachedWLASLDataset(Dataset):
         return len(self.indices)
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, int]:
-        frames = self.all_frames[idx]  # [T, 3, H, W] already normalized
+        frames = self.all_frames[idx] 
         label = self.all_labels[idx].item()
         if self.train_flip and torch.rand(1).item() > 0.5:
             frames = frames.flip(-1)
         return frames, label
 
-# Fast batching — just slices into pre-loaded tensors, no copying
+# Fast batching
 
 class FastTensorLoader:
-    """Drop-in replacement for DataLoader that slices contiguous tensors."""
     def __init__(self, frames: torch.Tensor, labels: torch.Tensor, batch_size: int, shuffle: bool = False):
         self.frames = frames
         self.labels = labels
@@ -185,7 +181,6 @@ def create_dataloaders(
 ) -> Tuple[DataLoader, DataLoader, DataLoader, int, dict]:
     df = pd.read_csv(metadata_csv)
 
-    # Filter to top N classes if specified (keep original indices for .pt file names)
     if top_n_classes > 0:
         train_counts = df[df["split"] == "train"]["label"].value_counts()
         top_labels = train_counts.head(top_n_classes).index.tolist()
@@ -200,7 +195,6 @@ def create_dataloaders(
     label_to_idx = {lbl: idx for idx, lbl in enumerate(labels_sorted)}
     num_classes = len(labels_sorted)
 
-    # Build label remapping: original label_idx -> new 0..N-1
     old_to_new = {}
     for _, row in df.iterrows():
         lbl = row["label"]
@@ -208,14 +202,12 @@ def create_dataloaders(
         if lbl in label_to_idx and old_idx not in old_to_new:
             old_to_new[old_idx] = label_to_idx[lbl]
 
-    # Use cached frames if available (much faster)
     use_cache = os.path.isdir(cache_dir) and len(os.listdir(cache_dir)) > 0
     if use_cache:
         print(f"[dataset] Using pre-extracted frames from {cache_dir}")
         train_dataset = CachedWLASLDataset(train_df.index.tolist(), cache_dir, train_aug=True)
         val_dataset = CachedWLASLDataset(val_df.index.tolist(), cache_dir, train_aug=False)
         test_dataset = CachedWLASLDataset(test_df.index.tolist(), cache_dir, train_aug=False)
-        # Remap labels to 0..num_classes-1
         for ds in [train_dataset, val_dataset, test_dataset]:
             ds.all_labels = torch.tensor([old_to_new[l.item()] for l in ds.all_labels], dtype=torch.long)
         train_loader = FastTensorLoader(train_dataset.all_frames, train_dataset.all_labels, batch_size, shuffle=True)

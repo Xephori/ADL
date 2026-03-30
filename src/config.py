@@ -9,7 +9,6 @@ import yaml
 #data hyperparameters
 @dataclass
 class DataConfig:
-    """Data-related hyperparameters."""
     video_dir: str = "data/dataset/SL"
     num_frames: int = 16
     image_size: int = 224
