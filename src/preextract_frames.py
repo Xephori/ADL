@@ -1,4 +1,3 @@
-"""Pre-extract and save video frames as .npz (uint8) for fast training."""
 import os
 import cv2
 import pandas as pd
@@ -36,7 +35,7 @@ def preextract(metadata_csv: str, output_dir: str, num_frames: int = 16, image_s
             if len(frames) < num_frames:
                 frames = frames + [frames[-1]] * (num_frames - len(frames))
             indices = np.linspace(0, len(frames) - 1, num_frames).astype(int)
-            sampled = np.stack([frames[j] for j in indices])  # [T, H, W, 3] uint8
+            sampled = np.stack([frames[j] for j in indices]) 
 
             np.savez_compressed(out_path, frames=sampled, label_idx=int(row["label_idx"]))
         except Exception as e:
