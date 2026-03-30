@@ -219,6 +219,7 @@ def train(cfg: Config, run_name: str | None = None, loaders=None) -> Dict[str, o
     best_model_path = os.path.join(cfg.paths.save_dir, f"{tag}_{timestamp}_best.pth")
     log_rows = []
     best_val_loss = float("inf")
+    best_val_acc = 0.0
     patience_counter = 0
 
     # training loop
@@ -246,7 +247,8 @@ def train(cfg: Config, run_name: str | None = None, loaders=None) -> Dict[str, o
             f"lr={current_lr:.6f} | {elapsed:.1f}s"
         )
         # early stopping and checkpointing
-        if val_loss < best_val_loss:
+        if val_acc > best_val_acc:
+            best_val_acc = val_acc
             best_val_loss = val_loss
             patience_counter = 0
             torch.save(model.state_dict(), best_model_path)
