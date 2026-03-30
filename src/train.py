@@ -157,6 +157,22 @@ def train(cfg: Config, run_name: str | None = None, loaders=None) -> Dict[str, o
         classifier_dropout=cfg.model.classifier_dropout,
     ).to(device)
 
+    # Load pretrained CNN backbone if specified (Models A/B/C only)
+    pretrained_path = cfg.model.pretrained_cnn_path
+    if pretrained_path and cfg.model.name in ("model_a", "model_b", "model_c"):
+        if os.path.exists(pretrained_path):
+            state_dict = torch.load(pretrained_path, map_location=device, weights_only=True)
+            model.cnn.load_state_dict(state_dict, strict=True)
+            print(f"[train] Loaded pretrained CNN backbone from {pretrained_path}")
+        else:
+            print(f"[train] WARNING: pretrained CNN path not found: {pretrained_path}")
+
+    # Freeze CNN backbone if requested
+    if cfg.model.freeze_cnn and cfg.model.name in ("model_a", "model_b", "model_c"):
+        for param in model.cnn.parameters():
+            param.requires_grad = False
+        print(f"[train] CNN backbone FROZEN — only temporal layers will train")
+
     total_params = sum(p.numel() for p in model.parameters())
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"[train] Model: {cfg.model.name} | Params: {total_params:,} (trainable: {trainable_params:,})")
@@ -281,8 +297,19 @@ def main() -> None:
             top_n_classes=cfg.model.num_classes if cfg.model.num_classes < 100 else 0,
         )
         loaders = (train_loader, val_loader, test_loader, num_classes)
-        for model_name, run_name in [("model_a", "model_a_baseline"), ("model_b", "model_b_lstm"), ("model_c", "model_c_attention"), ("model_d", "model_d_pretrained")]:
+        has_pretrained_cnn = bool(cfg.model.pretrained_cnn_path)
+        suffix = "_frozen" if cfg.model.freeze_cnn else ("_pretrained" if has_pretrained_cnn else "")
+        models_to_train = [
+            ("model_a", f"model_a{suffix}"),
+            ("model_b", f"model_b{suffix}"),
+            ("model_c", f"model_c{suffix}"),
+        ]
+        if not has_pretrained_cnn:
+            models_to_train.append(("model_d", "model_d_resnet"))
+        for model_name, run_name in models_to_train:
+            print(f"\n{'='*50}")
             print(f"  Training {model_name}")
+            print(f"{'='*50}")
             cfg.model.name = model_name
             results = train(cfg, run_name=run_name, loaders=loaders)
             print(f"[train] {model_name} done — Test acc: {results['test_acc']:.4f}\n")

@@ -29,6 +29,8 @@ class ModelConfig:
     lstm_dropout: float = 0.3
     attention_hidden_dim: int = 128
     classifier_dropout: float = 0.4
+    pretrained_cnn_path: str = ""
+    freeze_cnn: bool = False
 
 #training hyperparameters
 @dataclass
@@ -113,6 +115,10 @@ def get_cli_parser() -> argparse.ArgumentParser:
                         help="Classifier dropout override")
     parser.add_argument("--run-name", type=str, default=None,
                         help="Custom name for this run (used in log filenames)")
+    parser.add_argument("--pretrained-cnn", type=str, default=None,
+                        help="Path to pretrained CNN backbone weights (.pth)")
+    parser.add_argument("--freeze-cnn", action="store_true", default=False,
+                        help="Freeze CNN backbone weights during training")
     return parser
 
 
@@ -133,4 +139,8 @@ def apply_cli_overrides(cfg: Config, args: argparse.Namespace) -> Config:
         cfg.model.lstm_num_layers = args.lstm_layers
     if args.dropout is not None:
         cfg.model.classifier_dropout = args.dropout
+    if getattr(args, 'pretrained_cnn', None) is not None:
+        cfg.model.pretrained_cnn_path = args.pretrained_cnn
+    if getattr(args, 'freeze_cnn', False):
+        cfg.model.freeze_cnn = True
     return cfg
