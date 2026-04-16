@@ -1,9 +1,4 @@
-# Sign Language Word Recognition
-
-**SUTD 60.001 Applied Deep Learning**
-
-Team: Charmaine Hong, Michelle Halim, Timothy Tang, Muhammad Khairil
-
+# Sign Language Word Recognition Group 6
 
 
 ## What This Project Does
