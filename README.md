@@ -267,7 +267,7 @@ Full list with pinned versions is in `requirements.txt`.
 
 ## Links
 
-GitHub repository: https://github.com/charmaineyhong/ADL
+GitHub repository: https://github.com/Xephori/ADL.git
 
 Google Drive (model weights and dataset): https://drive.google.com/drive/folders/197ggC4-ApmuxbLZdNhSSSCJg2R8iSJeF?usp=drive_link
 
