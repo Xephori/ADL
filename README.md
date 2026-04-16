@@ -1,6 +1,5 @@
 # Sign Language Word Recognition Group 6
 
-
 ## What This Project Does
 
 We built a deep learning system that watches a short video of someone signing an American Sign Language (ASL) word and predicts which word is being signed. The model picks from a vocabulary of 10 words.
