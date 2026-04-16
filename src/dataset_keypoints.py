@@ -1,9 +1,5 @@
-"""
-Dataset and dataloader for MediaPipe keypoint sequences.
-Reads .pt files from data/keypoints_cache/ produced by src/extract_keypoints.py.
+#Dataset and dataloader for MediaPipe keypoint sequences.
 
-Each sample is (tensor[16, 63], label_idx).
-"""
 from __future__ import annotations
 import os
 from concurrent.futures import ThreadPoolExecutor
@@ -15,11 +11,6 @@ from torch.utils.data import DataLoader, Dataset
 
 
 class KeypointDataset(Dataset):
-    """
-    Loads all keypoint .pt files into RAM at construction time (fast epochs).
-    Same pattern as CachedWLASLDataset in dataset.py.
-    """
-
     def __init__(
         self,
         indices: List[int],
@@ -38,7 +29,7 @@ class KeypointDataset(Dataset):
         with ThreadPoolExecutor(max_workers=8) as pool:
             loaded = list(pool.map(_load, indices))
 
-        self.all_keypoints = torch.stack([x[0] for x in loaded])  # [N, 16, 63]
+        self.all_keypoints = torch.stack([x[0] for x in loaded]) 
         raw_labels = [x[1] for x in loaded]
         self.all_labels = torch.tensor(
             [label_remap[l] for l in raw_labels], dtype=torch.long
@@ -54,7 +45,6 @@ class KeypointDataset(Dataset):
 
 
 class FastKeypointLoader:
-    """Batch loader that slices directly into RAM tensors — no copy overhead."""
 
     def __init__(
         self,
@@ -85,10 +75,6 @@ def create_keypoint_dataloaders(
     top_n_classes: int = 0,
     cache_dir: str = "data/keypoints_cache",
 ) -> Tuple[FastKeypointLoader, FastKeypointLoader, FastKeypointLoader, int, dict]:
-    """
-    Returns (train_loader, val_loader, test_loader, num_classes, label_to_idx).
-    Mirrors the interface of create_dataloaders() in dataset.py.
-    """
     if not os.path.isdir(cache_dir) or len(os.listdir(cache_dir)) == 0:
         raise RuntimeError(
             f"Keypoint cache not found at '{cache_dir}'. "
@@ -111,7 +97,6 @@ def create_keypoint_dataloaders(
     label_to_idx = {lbl: idx for idx, lbl in enumerate(labels_sorted)}
     num_classes = len(labels_sorted)
 
-    # Build old label_idx → new contiguous idx mapping
     old_to_new: Dict[int, int] = {}
     for _, row in df.iterrows():
         old_idx = int(row["label_idx"])

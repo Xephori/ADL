@@ -5,11 +5,6 @@ import torch.nn as nn
 
 
 class ResidualBlock(nn.Module):
-    """Two conv layers with a skip connection.
-
-    Input → Conv → BN → ReLU → Conv → BN → (+skip) → ReLU → Output
-    If input channels != output channels, a 1x1 conv adjusts the skip path.
-    """
     def __init__(self, in_channels: int, out_channels: int) -> None:
         super().__init__()
         self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)

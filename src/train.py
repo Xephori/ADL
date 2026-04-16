@@ -1,3 +1,4 @@
+#Training pipeline for Sign Language Recognition models. Supports Models A, B, C (custom CNN backbone) and Model D (ResNet18).
 from __future__ import annotations
 import os
 import random
@@ -14,6 +15,7 @@ from src.config import Config, apply_cli_overrides, get_cli_parser, load_config
 from src.dataset import create_dataloaders
 from src.models import get_model
 
+
 def set_seed(seed: int = 42) -> None:
     random.seed(seed)
     np.random.seed(seed)
@@ -21,6 +23,7 @@ def set_seed(seed: int = 42) -> None:
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
+
 
 def compute_class_weights(metadata_csv: str, num_classes: int, device: torch.device) -> torch.Tensor:
     df = pd.read_csv(metadata_csv)
@@ -32,13 +35,14 @@ def compute_class_weights(metadata_csv: str, num_classes: int, device: torch.dev
     weights = weights / weights.sum() * num_classes
     return weights.to(device)
 
-# Train / validate one epoch
+
 def mixup_data(x, y, alpha=0.2):
     lam = np.random.beta(alpha, alpha) if alpha > 0 else 1.0
     batch_size = x.size(0)
     index = torch.randperm(batch_size, device=x.device)
     mixed_x = lam * x + (1 - lam) * x[index]
     return mixed_x, y, y[index], lam
+
 
 def mixup_criterion(criterion, logits, y_a, y_b, lam):
     return lam * criterion(logits, y_a) + (1 - lam) * criterion(logits, y_b)
@@ -309,9 +313,7 @@ def main() -> None:
         if not has_pretrained_cnn:
             models_to_train.append(("model_d", "model_d_resnet"))
         for model_name, run_name in models_to_train:
-            print(f"\n{'='*50}")
             print(f"  Training {model_name}")
-            print(f"{'='*50}")
             cfg.model.name = model_name
             results = train(cfg, run_name=run_name, loaders=loaders)
             print(f"[train] {model_name} done — Test acc: {results['test_acc']:.4f}\n")

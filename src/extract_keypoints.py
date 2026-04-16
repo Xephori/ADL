@@ -1,20 +1,4 @@
-"""
-Extract MediaPipe hand keypoints from pre-extracted frame cache.
-Reads .pt files from data/frames_cache/ (produced by preextract_frames.py),
-de-normalises the tensors back to uint8, runs MediaPipe Hands on each frame.
-
-Saves one .pt file per video into data/keypoints_cache/:
-  {
-    "keypoints": tensor[16, 63],   # 16 frames × 21 landmarks × (x,y,z)
-    "label_idx": int
-  }
-
-Normalisation: wrist (landmark 0) is subtracted from all landmarks so that
-hand position in the frame doesn't matter — only hand shape/pose does.
-
-Run once before training:
-    python -m src.extract_keypoints
-"""
+#Extract MediaPipe hand keypoints from pre-extracted frame cache.
 from __future__ import annotations
 import argparse
 import os
@@ -31,43 +15,33 @@ IMAGENET_STD  = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
 
 
 def denormalize_frame(frame_tensor: torch.Tensor) -> np.ndarray:
-    """
-    Convert a stored frame tensor back to a uint8 HxWx3 RGB numpy array.
-    Stored frames are float16, ImageNet-normalised, shape [3, H, W].
-    """
-    f = frame_tensor.float()                        # float16 → float32
-    f = f * IMAGENET_STD + IMAGENET_MEAN            # undo normalisation → [0, 1] approx
-    f = (f * 255.0).clamp(0, 255).byte()            # → uint8
-    return f.permute(1, 2, 0).numpy()               # [3,H,W] → [H,W,3]
+    f = frame_tensor.float()                        
+    f = f * IMAGENET_STD + IMAGENET_MEAN            
+    f = (f * 255.0).clamp(0, 255).byte()            
+    return f.permute(1, 2, 0).numpy()              
 
 
 def extract_keypoints_from_cache(
-    frames_tensor: torch.Tensor,   # [16, 3, H, W]  float16
+    frames_tensor: torch.Tensor,   
     hands_detector,
 ) -> torch.Tensor:
-    """
-    Run MediaPipe Hands on each de-normalised frame.
-    Returns tensor [16, 63].
-    If no hand detected in a frame, that frame is zeros.
-    All frames normalised: subtract wrist landmark (landmark 0).
-    """
     num_frames = frames_tensor.shape[0]
     keypoints = []
 
     for i in range(num_frames):
-        frame_rgb = denormalize_frame(frames_tensor[i])   # [H, W, 3] uint8
+        frame_rgb = denormalize_frame(frames_tensor[i])  
         result = hands_detector.process(frame_rgb)
 
         if result.multi_hand_landmarks:
             lm = result.multi_hand_landmarks[0].landmark
-            coords = np.array([[l.x, l.y, l.z] for l in lm], dtype=np.float32)  # [21, 3]
-            coords = coords - coords[0]   # subtract wrist → translation-invariant
+            coords = np.array([[l.x, l.y, l.z] for l in lm], dtype=np.float32)  
+            coords = coords - coords[0]   
         else:
             coords = np.zeros((21, 3), dtype=np.float32)
 
-        keypoints.append(coords.flatten())   # [63]
+        keypoints.append(coords.flatten())  
 
-    return torch.tensor(np.stack(keypoints), dtype=torch.float32)   # [16, 63]
+    return torch.tensor(np.stack(keypoints), dtype=torch.float32)   
 
 
 def main():
@@ -95,7 +69,6 @@ def main():
     print(f"[keypoints] Saving keypoints to: {args.output_dir}")
 
     try:
-        # MediaPipe >= 0.10 new API
         from mediapipe.tasks import python as mp_python
         from mediapipe.tasks.python import vision as mp_vision
         hands = None
@@ -111,7 +84,6 @@ def main():
             min_detection_confidence=0.3,
         )
     else:
-        # Fall back: try legacy path via mp.solutions
         try:
             mp_hands = mp.solutions.hands
             hands = mp_hands.Hands(
@@ -146,7 +118,7 @@ def main():
             continue
 
         d = torch.load(frames_path, weights_only=False)
-        frames_tensor = d["frames"]   # [16, 3, H, W] float16
+        frames_tensor = d["frames"]
 
         kp = extract_keypoints_from_cache(frames_tensor, hands)
 

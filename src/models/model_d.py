@@ -7,16 +7,14 @@ import torchvision.models as models
 from src.models.attention import TemporalAttention
 
 class PretrainedBackbone(nn.Module):
-    """ResNet18 pretrained on ImageNet, used as a frame-level feature extractor."""
     def __init__(self, freeze_early: bool = True) -> None:
         super().__init__()
         resnet = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
         # Remove the final classification layer — we only want the features
         self.features = nn.Sequential(*list(resnet.children())[:-1])
         self.feature_dim = 512  # ResNet18 outputs 512-dim features
-
-        # Freeze early layers (they already know edges, textures, shapes)
-        # Fine-tune layer3 + layer4 for our task
+        # Freeze early layers 
+        # Fine-tune layer3 + layer4
         if freeze_early:
             for name, param in self.features.named_parameters():
                 # Freeze everything except layer3 and layer4

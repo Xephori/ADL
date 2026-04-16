@@ -119,6 +119,8 @@ def get_cli_parser() -> argparse.ArgumentParser:
                         help="Path to pretrained CNN backbone weights (.pth)")
     parser.add_argument("--freeze-cnn", action="store_true", default=False,
                         help="Freeze CNN backbone weights during training")
+    parser.add_argument("--seed", type=int, default=None,
+                        help="Random seed override")
     return parser
 
 
@@ -143,4 +145,6 @@ def apply_cli_overrides(cfg: Config, args: argparse.Namespace) -> Config:
         cfg.model.pretrained_cnn_path = args.pretrained_cnn
     if getattr(args, 'freeze_cnn', False):
         cfg.model.freeze_cnn = True
+    if getattr(args, 'seed', None) is not None:
+        cfg.data.seed = args.seed
     return cfg

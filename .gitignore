@@ -15,17 +15,17 @@ venv/
 # IDE
 .vscode/
 
-# Dataset videos (too large for git)
+# Dataset videos 
 data/dataset/
 data/frames_cache/
 data/metadata.csv
 data/label_map.csv
 
-# Saved model weights (upload to Google Drive instead)
+# Saved model weights
 saved_models/*.pth
 
 # Training results
-results/
+results/old stuff/
 
 # Package transfer zips
 pkg_transfer*/

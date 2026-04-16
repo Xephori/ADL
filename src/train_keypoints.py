@@ -1,12 +1,4 @@
-"""
-Training script for the MediaPipe keypoint model (KeypointLSTM).
-
-Usage:
-    python -m src.train_keypoints
-    python -m src.train_keypoints --epochs 200 --lr 1e-3 --run-name kp_v1
-
-Reuses train_one_epoch / validate from src.train — they are model-agnostic.
-"""
+#Training script for the MediaPipe keypoint model (KeypointLSTM).
 from __future__ import annotations
 import argparse
 import os
@@ -79,17 +71,12 @@ def main() -> None:
     patience_counter = 0
     log_rows = []
 
-    # Keep a clean copy of training keypoints to restore after each noisy epoch
     original_train_keypoints = train_loader.keypoints.clone() if args.noise_std > 0 else None
 
     print(f"[kp-train] Starting training for {args.epochs} epochs ...")
     print(f"[kp-train] Keypoint noise std: {args.noise_std}")
     for epoch in range(1, args.epochs + 1):
         t0 = time.time()
-
-        # Keypoint noise augmentation — add Gaussian noise to training keypoints each epoch
-        # Simulates different hand sizes, finger lengths, slight pose variations
-        # Restored after each epoch so noise never accumulates
         if args.noise_std > 0:
             noise = torch.randn_like(original_train_keypoints) * args.noise_std
             train_loader.keypoints = original_train_keypoints + noise

@@ -215,6 +215,12 @@ def create_dataloaders(
         test_loader = FastTensorLoader(test_dataset.all_frames, test_dataset.all_labels, batch_size, shuffle=False)
     else:
         print(f"[dataset] No frame cache found — extracting from video on the fly (slow)")
+        # Remap label_idx to contiguous 0..num_classes-1 using the same mapping as cache path
+        df = df.copy()
+        df["label_idx"] = df["label"].map(label_to_idx)
+        train_df = df[df["split"] == "train"]
+        val_df = df[df["split"] == "val"]
+        test_df = df[df["split"] == "test"]
         train_transform = get_train_transform(image_size)
         eval_transform = get_eval_transform(image_size)
         train_dataset = WLASLDataset(train_df, transform=train_transform, num_frames=num_frames, jitter=True)
