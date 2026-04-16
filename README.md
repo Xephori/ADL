@@ -80,7 +80,39 @@ pip install -r requirements.txt
 
 ### Step 3: Download the dataset
 
-The dataset is not included in this repository because it is too large. Run the preprocessing script below. It will automatically download the WLASL dataset from Kaggle and generate the metadata files.
+The dataset is not included in this repository because it is too large. There are two ways to get it.
+
+---
+
+**Option A: Download from Google Drive (recommended, no Kaggle account needed)**
+
+The pre-processed dataset folder is already uploaded to our Google Drive alongside the model weights.
+
+1. Open the Google Drive link: https://drive.google.com/drive/folders/197ggC4-ApmuxbLZdNhSSSCJg2R8iSJeF?usp=drive_link
+2. Find the folder named `data` and download it
+3. Place the downloaded `data` folder inside the root of this repository so the structure looks like this:
+
+```
+ADL/
+  data/
+    dataset/
+      SL/
+        accident/
+        before/
+        ...
+    metadata.csv
+    label_map.csv
+```
+
+You do not need to run `data/preprocessing.py`. The `metadata.csv` and `label_map.csv` files are already included.
+
+---
+
+**Option B: Download from Kaggle (requires a Kaggle account and API key)**
+
+Step 1: Set up your Kaggle API key. Go to https://www.kaggle.com/settings, scroll to the API section, and click "Create New Token". This downloads a file called `kaggle.json`. Place it at `~/.kaggle/kaggle.json` on Mac/Linux or `C:\Users\<username>\.kaggle\kaggle.json` on Windows.
+
+Step 2: Run the preprocessing script. It will automatically download the dataset and generate the metadata files.
 
 ```
 python data/preprocessing.py
